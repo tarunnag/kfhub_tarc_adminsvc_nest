@@ -1,0 +1,14 @@
+{
+    "use as reference": {
+        "copy": [
+            "*"
+        ],
+        "ignore": [
+            "-update-configuration.json"
+        ],
+        "variables": {
+            "appName": "kfhub_tarc_adminsvc_nest",
+            "nodeVersion": "18.15.0"
+        }
+    }
+}

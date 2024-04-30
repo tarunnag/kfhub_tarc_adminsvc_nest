@@ -1,0 +1,336 @@
+variables:
+  NODE_VERSION: 18.15.0
+  name: kfhub_tarc_adminsvc_nest
+  build_folder: /home/azureuser/build
+  RELEASE_DIRECTORY: release
+default:
+  tags:
+    - kfhub-nest-build
+  before_script:
+    - export TERM=xterm
+    - nvm use ${NODE_VERSION}
+    - npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
+    - rm -rf ../kfhub_svc_lib
+    - git clone https://github.com/HayGroup/kfhub_svc_lib.git
+    - mv -f kfhub_svc_lib ../
+  retry:
+    max: 2
+    when:
+      - always
+      - data_integrity_failure
+      - scheduler_failure
+      - stale_schedule
+      - stuck_or_timeout_failure
+      - script_failure
+      - unknown_failure
+stages:
+  - build_dev
+  - deploy_dev
+  - build_devint
+  - deploy_devint
+  - build_test
+  - deploy_test
+  - build_staging
+  - deploy_staging
+  - build_PROD_US
+  - deploy_PROD_US
+  - build_PROD_EU
+  - deploy_PROD_EU
+  - build_PROD_CN
+  - deploy_PROD_CN
+build_dev:
+  stage: build_dev
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--dev--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on dev"
+    - npm run build dev
+    - npm run copy-assets
+    - npm run test:coverage
+    - npm run generate-docs
+    - cp -r coverage release
+    - cp -r documentation release
+    - cp -r node_modules release
+    - cp -r _environments/.env.dev release/.env
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_dev:
+  stage: deploy_dev
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--dev--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - tar -czvf release.tar.gz release
+    - ssh azureuser@$DEV_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/ && cp -R "${RELEASE_DIRECTORY}" "${RELEASE_DIRECTORY}-$(date +%Y.%m.%d-%H.%M.%S)" && if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+    - scp -r release.tar.gz azureuser@$DEV_IP:/home/azureuser/build/kfhub_tarc_adminsvc_nest
+    - ssh azureuser@$DEV_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/; tar -xzvf release.tar.gz"
+    - ssh azureuser@$DEV_IP "cp -R /home/azureuser/certs /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$DEV_IP "mkdir -p /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest && cp -R /home/azureuser/build/kfhub_tarc_adminsvc_nest/release/documentation /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest/"
+    - ssh azureuser@$DEV_IP "cd /home/azureuser/build/; sudo pm2 restart ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+    - echo "pm2 started successfully"
+build_devint:
+  stage: build_devint
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--devint--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop-int$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on devint"
+    - npm run build devint
+    - npm run copy-assets
+    - npm run test:coverage
+    - npm run generate-docs
+    - cp -r coverage release
+    - cp -r documentation release
+    - cp -r node_modules release
+    - cp -r _environments/.env.devint release/.env
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_devint:
+  stage: deploy_devint
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--devint--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop-int$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - tar -czvf release.tar.gz release
+    - ssh azureuser@$DEV_INT_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/ && cp -R "${RELEASE_DIRECTORY}" "${RELEASE_DIRECTORY}-$(date +%Y.%m.%d-%H.%M.%S)" && if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+    - scp -r release.tar.gz azureuser@$DEV_INT_IP:/home/azureuser/build/kfhub_tarc_adminsvc_nest
+    - ssh azureuser@$DEV_INT_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/; tar -xzvf release.tar.gz"
+    - ssh azureuser@$DEV_INT_IP "cp -R /home/azureuser/certs /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$DEV_INT_IP "mkdir -p /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest && cp -R /home/azureuser/build/kfhub_tarc_adminsvc_nest/release/documentation /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest/"
+    - ssh azureuser@$DEV_INT_IP "cd /home/azureuser/build/; sudo pm2 start ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+    - echo "pm2 started successfully"
+build_test:
+  stage: build_test
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--test--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop-qa$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on test"
+    - npm run build test
+    - npm run copy-assets
+    - npm run test:coverage
+    - npm run generate-docs
+    - cp -r coverage release
+    - cp -r documentation release
+    - cp -r node_modules release
+    - cp -r _environments/.env.test release/.env
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_test:
+  stage: deploy_test
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--test--deployment--\d{14}$/
+      when: on_success
+    - if: $CI_COMMIT_REF_NAME =~ /^develop-qa$/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: on_success
+  script:
+    - tar -czvf release.tar.gz release
+    - ssh azureuser@$TEST_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/ && cp -R "${RELEASE_DIRECTORY}" "${RELEASE_DIRECTORY}-$(date +%Y.%m.%d-%H.%M.%S)" && if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+    - scp -r release.tar.gz azureuser@$TEST_IP:/home/azureuser/build/kfhub_tarc_adminsvc_nest
+    - ssh azureuser@$TEST_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/; tar -xzvf release.tar.gz"
+    - ssh azureuser@$TEST_IP "cp -R /home/azureuser/data /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$TEST_IP "cp -R /home/azureuser/certs /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$TEST_IP "mkdir -p /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest && cp -R /home/azureuser/build/kfhub_tarc_adminsvc_nest/release/documentation /home/azureuser/build/doc/kfhub_tarc_adminsvc_nest/"
+    - ssh azureuser@$TEST_IP "cd /home/azureuser/build/; sudo pm2 restart ecosystem.config.js --only kfhub_tarc_adminsvc_nest  && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+    - echo "pm2 started successfully"
+build_staging:
+  stage: build_staging
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: on_success
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on stage"
+    - npm run build stage
+    - npm run copy-assets
+    - cp -r node_modules/ package.json release/
+    - cp -r _environments/.env.stage release/.env
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_staging:
+  stage: deploy_staging
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: on_success
+  script:
+    - tar -czvf release.tar.gz release
+    - ssh azureuser@$STAGE_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/ && cp -R "${RELEASE_DIRECTORY}" "${RELEASE_DIRECTORY}-$(date +%Y.%m.%d-%H.%M.%S)" && if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+    - scp -r release.tar.gz azureuser@$STAGE_IP:/home/azureuser/build/kfhub_tarc_adminsvc_nest/
+    - ssh azureuser@$STAGE_IP "cd /home/azureuser/build/kfhub_tarc_adminsvc_nest/; tar -xzvf release.tar.gz"
+    - ssh azureuser@$STAGE_IP "cp -R /home/azureuser/certs /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$STAGE_IP "cp -R /home/azureuser/data /home/azureuser/build/kfhub_tarc_adminsvc_nest/release"
+    - ssh azureuser@$STAGE_IP "cd /home/azureuser/build/; sudo pm2 start ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+    - echo "pm2 started successfully"
+build_PROD_US:
+  stage: build_PROD_US
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on produs"
+    - npm run build prod
+    - npm run copy-assets
+    - cp -r node_modules release
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_PROD_US:
+  stage: deploy_PROD_US
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - |
+      for server in $PROD_US_IP01 $PROD_US_IP02; do
+        tar -czvf release.tar.gz release
+        ssh tonym@$server "cd /home/tonym/build/kfhub_tarc_adminsvc_nest/ && cp -R "${RELEASE_DIRECTORY}" "${RELEASE_DIRECTORY}-$(date +%Y.%m.%d-%H.%M.%S)" && if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+        scp -r release.tar.gz tonym@$server:/home/tonym/build/kfhub_tarc_adminsvc_nest/
+        ssh tonym@$server "cd /home/tonym/build/kfhub_tarc_adminsvc_nest/; tar -xzvf release.tar.gz"
+        ssh tonym@$server "cp -R /home/tonym/certs /home/tonym/build/kfhub_tarc_adminsvc_nest/release"
+        ssh tonym@$server "cd /home/tonym/build/ && sudo pm2 start ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+      done
+build_PROD_EU:
+  stage: build_PROD_EU
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on prodEU"
+    - npm run build prodEU
+    - npm run copy-assets
+    - cp -r node_modules release
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_PROD_EU:
+  stage: deploy_PROD_EU
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - |
+      for server in $PROD_EU_IP01 $PROD_EU_IP02; do
+         echo "Processing server: $server"
+         tar -czvf release.tar.gz release
+         ssh ubuntu@$server "cd /home/ubuntu/build/kfhub_tarc_adminsvc_nest/ && if [ -d release ]; then rm -rf release; fi"
+         scp -r release.tar.gz ubuntu@$server:/home/ubuntu/build/kfhub_tarc_adminsvc_nest/
+         ssh ubuntu@$server "cd /home/ubuntu/build/kfhub_tarc_adminsvc_nest/ && tar -xzvf release.tar.gz"
+         ssh ubuntu@$server "cp -R /home/ubuntu/certs /home/ubuntu/build/kfhub_tarc_adminsvc_nest/release"
+         ssh ubuntu@$server "cd /home/ubuntu/build/ && sudo pm2 start ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+         echo "Successfully processed server: $server"
+      done
+build_PROD_CN:
+  stage: build_PROD_CN
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - npm install --legacy-peer-deps
+    - echo "building on prodcn"
+    - npm run build prodCN
+    - npm run copy-assets
+    - cp -r node_modules release
+  artifacts:
+    paths:
+      - release
+    expire_in: 8 week
+deploy_PROD_CN:
+  stage: deploy_PROD_CN
+  rules:
+    - if: $CI_COMMIT_TAG =~ /--manual--deployment--\d{14}$/
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_TAG =~ /--staging--deployment--\d{14}$/
+      when: manual
+    - if: $CI_COMMIT_REF_NAME =~ /^(release|hotfix)\/.+/ && $CI_COMMIT_MESSAGE !~ /Updated\sconfiguration\sand\sversion\sto/
+      when: manual
+  script:
+    - |
+      for server in $PROD_CN_IP01 $PROD_CN_IP02; do
+         tar -czvf release.tar.gz release
+         ssh ubuntu@$server "if [ -d ${RELEASE_DIRECTORY} ]; then rm -rf ${RELEASE_DIRECTORY}; fi"
+         scp -r release.tar.gz ubuntu@$server:/home/ubuntu/build/kfhub_tarc_adminsvc_nest/
+         ssh ubuntu@$server "cd /home/ubuntu/build/kfhub_tarc_adminsvc_nest/ && tar -xzvf release.tar.gz"
+         ssh ubuntu@$server "cp -R /home/ubuntu/certs /home/ubuntu/build/kfhub_tarc_adminsvc_nest/release"
+         ssh ubuntu@$server "cd /home/ubuntu/build/ && sudo pm2 start ecosystem.config.js --only kfhub_tarc_adminsvc_nest && sudo pm2 describe kfhub_tarc_adminsvc_nest"
+         echo "pm2 started successfully"
+      done
